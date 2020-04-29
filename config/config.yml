@@ -10,6 +10,14 @@ init_template:
 
 max_iters: 4
 
+
+resample_init_template: False #set this True to resample init template to below dims
+resample_vox_dims: 
+ - 0.7
+ - 0.7
+ - 0.7
+
+
 #should be at least 2.3.1 (includes --random-seed option)
 ants_container:  '/project/6007967/akhanf/singularity/ants-v2.3.1.sif'
 
