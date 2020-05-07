@@ -25,7 +25,6 @@ localrules: all, gen_init_avg_template, get_existing_template, set_init_template
 rule all:
     input:
         avg_template =  expand('results/iter_{iteration}/template_{{channel}}.nii.gz'.format(iteration=config['max_iters']),channel=channels),
-        post_reg_template = expand('results/post_reg_to_init_template/template_iter-{iteration}_WarpedToInitTemplate_{{channel}}.nii.gz'.format(iteration=config['max_iters']),channel=channels)
 
 
 rule gen_init_avg_template:
@@ -193,65 +192,4 @@ rule apply_template_update:
     shell:
         'antsApplyTransforms {params.dim} --float 1 --verbose 1 -i {input.template} -o {output.template} -t [{input.affine},1] '
         ' -t {input.invwarp} -t {input.invwarp} -t {input.invwarp} -t {input.invwarp} -r {input.template} &> {log}' #apply warp 4 times
-
-rule post_reg_to_init_template:
-    input: 
-        moving =  lambda wildcards: expand('results/iter_{iteration}/template_{{channel}}.nii.gz'.format(iteration=wildcards.iteration),channel=channels),
-        fixed = expand('results/iter_0/init/existing_template_{channel}.nii.gz',channel=channels)
-    params:
-        out_prefix = lambda wildcards: 'results/post_reg_to_init_template/template_iter-{iteration}_'.format(iteration=wildcards.iteration),
-        base_opts = '-d {dim} --float 1 --verbose 1 --random-seed {random_seed}'.format(dim=config['ants']['dim'],random_seed=config['ants']['random_seed']),
-        intensity_opts = config['ants']['intensity_opts'],
-        init_translation = lambda wildcards, input: '-r [{fixed},{moving},1]'.format(fixed=input.fixed[0],moving=input.moving[0]),
-        linear_multires = '-c [{reg_iterations},1e-6,10] -f {shrink_factors} -s {smoothing_factors}'.format(
-                                reg_iterations = config['ants']['linear']['reg_iterations'],
-                                shrink_factors = config['ants']['linear']['shrink_factors'],
-                                smoothing_factors = config['ants']['linear']['smoothing_factors']),
-        deform_model = '-t {deform_model}'.format(deform_model = config['ants']['deform']['transform_model']),
-        deform_multires = '-c [{reg_iterations},1e-9,10] -f {shrink_factors} -s {smoothing_factors}'.format(
-                                reg_iterations = config['ants']['deform']['reg_iterations'],
-                                shrink_factors = config['ants']['deform']['shrink_factors'],
-                                smoothing_factors = config['ants']['deform']['smoothing_factors']),
-        linear_metric = lambda wildcards, input: ['-m MI[{fixed},{moving},1,32,Regular,0.25]'.format(
-                                fixed=fixed,moving=moving) for fixed,moving in zip(input.fixed,input.moving) ],
-        deform_metric = lambda wildcards, input: ['-m {metric}[{fixed},{moving},1,4]'.format(
-                                metric=config['ants']['deform']['sim_metric'],
-                                fixed=fixed, moving=moving) for fixed,moving in zip(input.fixed,input.moving) ]
-    output:
-        warp = 'results/post_reg_to_init_template/template_iter-{iteration}_1Warp.nii.gz',
-        invwarp = 'results/post_reg_to_init_template/template_iter-{iteration}_1InverseWarp.nii.gz',
-        affine = 'results/post_reg_to_init_template/template_iter-{iteration}_0GenericAffine.mat'
-    log: 'logs/post_reg_to_init_template/iter_{iteration}.log'
-    threads: 16
-    resources:
-        mem_mb = 8000, #should try to calculate this based on image size.. 
-        time = 60 # 1 hr
-    shell: 
-        'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS={threads} '
-        'antsRegistration {params.base_opts} {params.intensity_opts} '
-        '{params.init_translation} ' #initial translation
-        '-t Rigid[0.1] {params.linear_metric} {params.linear_multires} ' # rigid registration
-        '-t Affine[0.1] {params.linear_metric} {params.linear_multires} ' # affine registration
-        '{params.deform_model} {params.deform_metric} {params.deform_multires} '  # deformable registration
-        '-o {params.out_prefix} &> {log}'
-
-
-rule post_warp_to_init_template:
-    input: 
-        moving = 'results/iter_{iteration}/template_{channel}.nii.gz',
-        fixed = 'results/iter_0/init/existing_template_{channel}.nii.gz',
-        warp = 'results/post_reg_to_init_template/template_iter-{iteration}_1Warp.nii.gz',
-        affine = 'results/post_reg_to_init_template/template_iter-{iteration}_0GenericAffine.mat'
-    params:
-        base_opts = '-d {dim} --float 1 --verbose 1'.format(dim=config['ants']['dim']),
-    output:
-        warped = 'results/post_reg_to_init_template/template_iter-{iteration}_WarpedToInitTemplate_{channel}.nii.gz'
-    log: 'logs/post_warp_to_init_template/template_iter_{iteration}_{channel}.log'
-    threads: 1
-    shell: 
-        'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS={threads} '
-        'antsApplyTransforms {params.base_opts} -i {input.moving} -o {output.warped} -r {input.fixed} -t {input.warp} -t {input.affine} &> {log}'
-
-
-    
 
