@@ -32,7 +32,7 @@ rule gen_init_avg_template:
     output: 'results/iter_0/init/init_avg_template_{channel}.nii.gz'
     params:
         dim = config['ants']['dim'],
-        use_n4 = '1'
+        use_n4 = '2'
     log: 'logs/gen_init_avg_template_{channel}.log'
     shell:
         'AverageImages {params.dim} {output} {params.use_n4} {input} &> {log}'
@@ -121,7 +121,7 @@ rule avg_warped:
         targets = expand('results/iter_{iteration}/sub-{subject}_WarpedToTemplate_{channel}.nii.gz',subject=subjects,allow_missing=True)
     params:
         dim = config['ants']['dim'],
-        use_n4 = '1'
+        use_n4 = '2'
     output: 'results/iter_{iteration}/shape_update/avg_warped_{channel}.nii.gz'
     group: 'shape_update'
     log: 'logs/avg_warped/iter_{iteration}_{channel}.log'
