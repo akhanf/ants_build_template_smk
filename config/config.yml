@@ -19,7 +19,7 @@ resample_vox_dims:
 
 
 #should be at least 2.3.1 (includes --random-seed option)
-ants_container:  '/project/6007967/akhanf/singularity/ants-v2.3.1.sif'
+ants_container:  '/project/6050199/akhanf/singularity/kaczmarj_ants_2.3.4.sif'
 
 ants:
     dim: 3
