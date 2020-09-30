@@ -4,9 +4,11 @@ in_images:
 
 participants_tsv: 'config/participants.tsv'
 
+
+#assumes that templateflow templates have been grabbed.. 
 init_template:
-  T1w: 'resources/tpl-MNI152NLin2009cAsym_res-01_T1w.nii.gz'
-  T2w: 'resources/tpl-MNI152NLin2009cAsym_res-01_T2w.nii.gz'
+  T1w: '~/.cache/templateflow/tpl-MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-01_T1w.nii.gz'
+  T2w: '~/.cache/templateflow/tpl-MNI152NLin2009cAsym/tpl-MNI152NLin2009cAsym_res-01_T2w.nii.gz'
 
 max_iters: 4
 
