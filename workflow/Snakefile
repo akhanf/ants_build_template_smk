@@ -4,8 +4,6 @@ import pandas as pd
 
 configfile: 'config/config.yml'
 
-#set container for execution
-container: config['ants_container']
 
 #load participants.tsv file, and strip off sub- from participant_id column
 df = pd.read_table(config['participants_tsv'])
@@ -20,11 +18,18 @@ wildcard_constraints:
     iteration="[0-9]+"
 
 
+if config['enable_quick_dirty'] == True:
+    config['ants'] = config['ants_quick_dirty']
+
+
 localrules: all, gen_init_avg_template, get_existing_template, set_init_template
+
 
 rule all:
     input:
         avg_template =  expand('results/iter_{iteration}/template_{{channel}}.nii.gz'.format(iteration=config['max_iters']),channel=channels),
+
+
 
 
 rule gen_init_avg_template:
@@ -34,6 +39,7 @@ rule gen_init_avg_template:
         dim = config['ants']['dim'],
         use_n4 = '2'
     log: 'logs/gen_init_avg_template_{channel}.log'
+    container: config['ants_container']
     shell:
         'AverageImages {params.dim} {output} {params.use_n4} {input} &> {log}'
 
@@ -41,6 +47,7 @@ rule get_existing_template:
     input: lambda wildcards: config['init_template'][wildcards.channel]
     output: 'results/iter_0/init/existing_template_{channel}.nii.gz'
     log: 'logs/get_existing_template_{channel}.log'
+    container: config['ants_container']
     shell: 'cp -v {input} {output} &> {log}'
 
 
@@ -55,6 +62,7 @@ rule set_init_template:
                      if config['resample_init_template'] else f"cp -v {input} {output}"
     output: 'results/iter_0/template_{channel}.nii.gz'
     log: 'logs/set_init_template_{channel}.log'
+    container: config['ants_container']
     shell: '{params.cmd} &> {log}'
 
 rule reg_to_template:
@@ -90,6 +98,7 @@ rule reg_to_template:
     resources:
         mem_mb = 16000, # right now these are on the high-end -- could implement benchmark rules to do this at some point..
         time = 3*60 # 3 hrs
+    container: config['ants_container']
     shell: 
         'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS={threads} '
         'antsRegistration {params.base_opts} {params.intensity_opts} '
@@ -112,6 +121,7 @@ rule warp_to_template:
         warped = 'results/iter_{iteration}/sub-{subject}_WarpedToTemplate_{channel}.nii.gz'
     log: 'logs/warp_to_template/iter_{iteration}_sub-{subject}_{channel}.log'
     threads: 1
+    container: config['ants_container']
     shell: 
         'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS={threads} '
         'antsApplyTransforms {params.base_opts} -i {input.target} -o {output.warped} -r {input.template} -t {input.warp} -t {input.affine} &> {log}'
@@ -125,6 +135,7 @@ rule avg_warped:
     output: 'results/iter_{iteration}/shape_update/avg_warped_{channel}.nii.gz'
     group: 'shape_update'
     log: 'logs/avg_warped/iter_{iteration}_{channel}.log'
+    container: config['ants_container']
     shell:
         'AverageImages {params.dim} {output} {params.use_n4} {input} &> {log}'
        
@@ -138,6 +149,7 @@ rule avg_inverse_warps:
         invwarp = 'results/iter_{iteration}/shape_update/avg_inverse_warps.nii.gz'
     group: 'shape_update'
     log: 'logs/avg_inverse_warps/iter_{iteration}.log'
+    container: config['ants_container']
     shell:
         'AverageImages {params.dim} {output} {params.use_n4} {input} &> {log}'
          
@@ -149,6 +161,7 @@ rule scale_by_gradient_step:
     output: 'results/iter_{iteration}/shape_update/avg_inverse_warps_scaled.nii.gz'
     group: 'shape_update'
     log: 'logs/scale_by_gradient_step/iter_{iteration}.log'
+    container: config['ants_container']
     shell:
         'MultiplyImages {params.dim} {input} {params.gradient_step} {output} &> {log}' 
 
@@ -161,6 +174,7 @@ rule avg_affine_transforms:
         affine = 'results/iter_{iteration}/shape_update/avg_affine.mat'
     group: 'shape_update'
     log: 'logs/avg_affine_transforms/iter_{iteration}.log'
+    container: config['ants_container']
     shell:
         'AverageAffineTransformNoRigid {params.dim} {output} {input} &> {log}'
 
@@ -175,6 +189,7 @@ rule transform_inverse_warp:
         invwarp = 'results/iter_{iteration}/shape_update/avg_inverse_warps_scaled_transformed.nii.gz'
     group: 'shape_update'
     log: 'logs/transform_inverse_warp/iter_{iteration}.log'
+    container: config['ants_container']
     shell:
         'antsApplyTransforms {params.dim} -e vector -i {input.invwarp} -o {output} -t [{input.affine},1] -r {input.ref} --verbose 1 &> {log}'
 
@@ -189,7 +204,24 @@ rule apply_template_update:
         template =  'results/iter_{iteration}/template_{channel}.nii.gz'
     log: 'logs/apply_template_update/iter_{iteration}_{channel}.log'
     group: 'shape_update'
+    container: config['ants_container']
     shell:
         'antsApplyTransforms {params.dim} --float 1 --verbose 1 -i {input.template} -o {output.template} -t [{input.affine},1] '
         ' -t {input.invwarp} -t {input.invwarp} -t {input.invwarp} -t {input.invwarp} -r {input.template} &> {log}' #apply warp 4 times
 
+
+rule cp_nii_to_templateflow_naming:
+    input: 
+        template =  'results/iter_{iteration}/template_{{channel}}.nii.gz'.format(iteration=config['max_iters'])
+    output:
+        template =  'results/tpl-{name}/tpl-{name}_res-{res}_{{channel}}.nii.gz'.format(name=config['template_name'],res=config['resolution_index'])
+    shell: 'cp {input} {output}'
+
+
+rule create_template_json:
+    input: 
+        #needs a template nii to get origin, space, zooms
+        nii = 'results/tpl-{name}/tpl-{name}_res-{res}_{channel}.nii.gz'.format(name=config['template_name'],res=config['resolution_index'],channel=channels[0])
+    output:
+        json = 'results/tpl-{name}/template_description.json'
+    script: 'scripts/create_template_description_json.py'
